@@ -1,0 +1,117 @@
+interface axi_rd(aw: int, dw: int):
+    m arvalid
+    s arready
+    m araddr[aw-1:0]
+
+    s rready
+    m rvalid
+    s rdata[dw-1:0]
+
+interface axi_wr(aw: int, dw: int):
+    m wvalid
+    s wready
+    m waddr[aw-1:0]
+    m wsel[log2(dw)-1:0]
+    m wdata[dw-1:0]
+
+    s bwvalid
+    m bwready
+
+interface axi(aw: int, dw: int):
+    use axi_rd(aw, dw)
+    use axi_wr(aw, dw)
+
+interface saxi_rd(aw: int, dw: int):
+    m arvalid
+    m araddr[aw-1:0]
+    s rvalid
+    s rdata[dw-1:0]
+
+interface saxi_wr(aw: int, dw: int):
+    m wvalid
+    m waddr[aw-1:0]
+    m wsel[log2(dw):0]
+    m wdata[dw-1:0]
+    s bwvalid
+
+interface saxi(aw: int, dw: int):
+    use saxi_rd(aw, dw)
+    use saxi_wr(aw, dw)
+
+enum alu_op:
+    add, adc,
+
+enum arm_flags:
+    n, z, c, v
+
+struct decoded_inst:
+    rd[3:0]
+    rn[3:0]
+    rm[3:0]
+    imm[31:0]
+
+    alu_op: alu_op
+    save_flags: set(arm_flags)
+
+    save_res
+    mem_ld
+    mem_st
+    
+
+module exec:
+    i rst
+    i clk
+
+    i inst: decoded_inst
+    i inst_valid
+
+module inst_decoder:
+    i enc[15:0]
+    o dec: decoded_inst
+
+def inst_decoder:
+    always:
+        dec = 'x
+        dec.save_res = 0
+        dec.save_flags = {}
+        dec.mem_ld = 0
+        dec.mem_st = 0
+        switch enc:
+            # ADC <Rdn>, <Rm>
+            16'b010000_0101_???_???:
+                dec.rd = enc[2:0]
+                dec.rn = dec.rd
+                dec.rm = enc[5:3]
+                dec.alu_op = alu_op'adc
+                dec.save_flags = { n, z, c, v }
+                dec.save_res = 1
+
+
+module arm_core:
+    i rst
+    i clk
+    m inst_bus: saxi_rd(aw=32, dw=16)
+    m data_bus: saxi(aw=32, dw=32)
+
+def arm_core:
+    sig pc[31:0]
+
+    mod decoder: inst_decoder
+        enc <= inst_bus.rdata
+
+    mod exec: exec
+        rst <= rst
+        clk <= clk
+        inst <= decoder.dec
+        inst_valid <= inst_bus.rvalid
+
+    always:
+        inst_bus.arvalid = 1
+        inst_bus.araddr = pc
+
+    on posedge clk or posedge rst:
+        if rst:
+            pc <= 0
+        else:
+            if inst_bus.rvalid:
+                pc <= pc + 2
