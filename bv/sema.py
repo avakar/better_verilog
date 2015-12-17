@@ -1,4 +1,4 @@
-class Scope:
+﻿class Scope:
     def __init__(self, parent=None):
         self.parent = parent
         self.map = {}
@@ -25,4 +25,20 @@ def sema(units):
             if decl.kind in ('interface', 'struct', 'enum', 'module'):
                 unit.scope.add(decl.name, decl)
                 decl.scope = Scope(parent=unit.scope)
+            if decl.kind == 'module':
+                for port in decl.ports:
+                    decl.scope.add(port.name, port)
+                decl.defs = []
+
+    for unit in units:
+        for decl in unit.decls:
+            if decl.kind == 'def':
+                mod = ctx.lookup(decl.name, 'module')
+                mod.defs.append(decl)
+                decl.mod = mod
+                decl.scope = Scope(parent=mod.scope)
+                for def_decl in decl.decls:
+                    if def_decl.kind in ('signal', 'inst'):
+                        decl.scope.add(def_decl.name, def_decl)
+
     return ctx

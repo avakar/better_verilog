@@ -356,7 +356,7 @@ def port_map(p):
     conn = p(expr)
     return Node('port_map', name=name, into=dir == '<=', conn=conn)
 
-def edge_spec_one(p):
+def edge_spec(p):
     with p:
         p(kw, 'posedge')
         rising = True
@@ -366,17 +366,6 @@ def edge_spec_one(p):
     p(ws)
     edge = p(ident)
     return Node('edgespec', rising=rising, name=edge)
-
-def edge_spec(p):
-    r = [p(edge_spec_one)]
-    with p:
-        while True:
-            p(ws)
-            p(kw, 'or')
-            p(ws)
-            r.append(p(edge_spec_one))
-            p.commit()
-    return r
 
 def def_decl(p):
     with p:

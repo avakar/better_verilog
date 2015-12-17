@@ -83,8 +83,49 @@ def expand_signal(scope, dir, name, type):
                 res.extend(expand_signal(subtype_scope, new_dir, '{}__{}'.format(name, member.name), member.type))
         return res
     if type.kind == 'bit-type':
-        out_dir = 'output' if dir == 'o' else 'input'
+        if dir is None:
+            out_dir = 'reg'
+        else:
+            out_dir = 'output reg' if dir == 'o' else 'input'
         return [(out_dir, '', name)]
+
+def format_expr(scope, expr):
+    if expr.kind == 'binary-expr':
+        lhs = format_expr(scope, expr.lhs)
+        rhs = format_expr(scope, expr.rhs)
+        return '({}) {} ({})'.format(lhs, expr.op, rhs)
+    if expr.kind == 'unary-expr':
+        e = format_expr(scope, expr.arg)
+        return '{}({})'.format(expr.op, e)
+    if expr.kind == 'member-expr':
+        e = format_expr(scope, expr.expr)
+        return '({}).{}'.format(e, expr.member)
+    if expr.kind == 'num':
+        return str(expr.value)
+    if expr.kind == 'sized-num':
+        return '{}\'b{}'.format(expr.size, expr.v)
+    if expr.kind == 'ref':
+        return expr.name
+    raise RuntimeError('unknown expr')
+
+def format_stmt(scope, stmt, indent):
+    if stmt.kind == 'assign-stmt':
+        lhs = format_expr(scope, stmt.lhs)
+        rhs = format_expr(scope, stmt.rhs)
+        op = '<=' if stmt.delayed else '='
+        return '{}{} {} {};\n'.format(indent, lhs, op, rhs)
+    if stmt.kind == 'if-stmt':
+        cond = format_expr(scope, stmt.cond)
+        true_body = format_stmts(scope, stmt.true_body, indent + '    ')
+        if stmt.false_body is not None:
+            false_body = format_stmts(scope, stmt.false_body, indent + '    ')
+            return '{ind}if ({cond}) begin\n{tr}{ind}end else begin\n{fal}{ind}end\n'.format(ind=indent, cond=cond, tr=true_body, fal=false_body)
+        else:
+            return '{ind}if ({cond}) begin\n{tr}{ind}end\n'.format(ind=indent, cond=cond, tr=true_body)
+    raise RuntimeError('unknown stmt')
+
+def format_stmts(scope, stmts, indent):
+    return ''.join([format_stmt(scope, stmt, indent) for stmt in stmts])
 
 def _gen_module(mod, fin):
     ports = []
@@ -92,12 +133,37 @@ def _gen_module(mod, fin):
         new_ports = expand_signal(mod.scope, port.dir, port.name, port.type)
         for pre, suf, name in new_ports:
             ports.append('{}{} {}'.format(pre, suf, name))
+
+    decls = []
+    for def_ in mod.defs:
+        for decl in def_.decls:
+            if decl.kind == 'always':
+                decls.append('always @(*) begin\n{}end\n'.format(format_stmts(mod, decl.body, '    ')))
+            elif decl.kind == 'on':
+                specs = []
+                for spec in decl.specs:
+                    dir = 'posedge' if spec.rising else 'negedge'
+                    specs.append('{} {}'.format(dir, spec.name))
+                decls.append('always @({}) begin\n{}end\n'.format(' or '.join(specs), format_stmts(mod, decl.body, '    ')))
+            elif decl.kind == 'inst':
+                pms = []
+                for pm in decl.port_maps:
+                    pms.append('.{}({})'.format(pm.name, format_expr(mod.scope, pm.conn)))
+                decls.append('{} {}(\n    {}\n    );\n'.format(decl.module, decl.name, ',\n    '.join(pms)))
+            elif decl.kind == 'signal':
+                new_sigs = expand_signal(mod.scope, None, decl.name, decl.type)
+                for pre, suf, name in new_sigs:
+                    decls.append('{}{} {};\n'.format(pre, suf, name))
+            else:
+                raise RuntimeError('unknown decl')
     fin.write('''\
 module {name}(
     {ports}
     );
+
+{decls}
 endmodule
-'''.format(name=mod.name, ports=',\n    '.join(ports)))
+'''.format(name=mod.name, ports=',\n    '.join(ports), decls='\n'.join(decls)))
 
 def gen_verilog(mod, file):
     _gen_module(mod, file)

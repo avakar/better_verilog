@@ -30,22 +30,25 @@ Here's the list of all AST nodes produced by the parser, along with their attrib
     * name: str
     * ports: [port]
     * scope: scope (post-sema)
+    * defs: [def] (post-sema)
  * def
     * name: str
     * decls: [signal + always + on + inst]
+    * scope: scope (post-sema)
+    * mod: module (post-sema)
  * signal
     * name: str
     * type: type
  * always
     * body: [stmt]
  * on
-    * specs: [[edgespec]]
+    * specs: [edgespec]
  * edgespec
     * name: str # XXX
     * rising: bool
  * inst
     * name: str
-    * module: str # XXX
+    * module: str
     * port_maps: [port_map]
  * port_map
     * name: str
@@ -113,7 +116,7 @@ Here's the list of all AST nodes produced by the parser, along with their attrib
     * size: int
     * v: str
  * ref
-    * name: str   
+    * name: str
  * set-expr
     * items: [str]
 
