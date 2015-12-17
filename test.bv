@@ -11,7 +11,7 @@ interface axi_wr(aw: int, dw: int):
     m wvalid
     s wready
     m waddr[aw-1:0]
-    m wsel[log2(dw)-1:0]
+    m wsel[log2(dw/8)-1:0]
     m wdata[dw-1:0]
 
     s bwvalid
@@ -30,7 +30,7 @@ interface saxi_rd(aw: int, dw: int):
 interface saxi_wr(aw: int, dw: int):
     m wvalid
     m waddr[aw-1:0]
-    m wsel[log2(dw):0]
+    m wsel[log2(dw/8):0]
     m wdata[dw-1:0]
     s bwvalid
 
@@ -96,10 +96,10 @@ module arm_core:
 def arm_core:
     sig pc[31:0]
 
-    mod decoder: inst_decoder
+    inst decoder: inst_decoder
         enc <= inst_bus.rdata
 
-    mod exec: exec
+    inst exec: exec
         rst <= rst
         clk <= clk
         inst <= decoder.dec
