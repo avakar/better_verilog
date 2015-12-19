@@ -1,161 +1,137 @@
 ﻿import math
-from .sema import Scope
 from .ast import Node
+from .eval import eval_int_expr
 
-_builtin_fns = {
-    'log2': lambda x: int(math.log(x, 2))
-    }
+def expand_port(name, dir, type, out_dir='o'):
+    # -> (output: bool, name: str, bounds: str)
+    bounds = []
+    while type.kind == 'resolved-array-type':
+        bounds.append('[{}:{}]'.format(type.left_bound, type.right_bound))
+        type = type.subtype
+    bounds.reverse()
+    bounds = ''.join(bounds)
 
-def eval_builtin_fn(scope, expr):
-    if expr.kind == 'ref':
-        return _builtin_fns[expr.name]
-    raise RuntimeError('invalid fn')
-
-def eval_int_expr(scope, expr):
-    if expr.kind == 'num':
-        return expr.value
-    if expr.kind == 'sized-num':
-        if any(c in 'xz?' for c in expr.v):
-            raise RuntimeError('invalid int expr')
-        return int(expr.v, 2)
-    if expr.kind == 'unary-expr':
-        if expr.op == '-':
-            return -eval_int_expr(scope, expr.arg)
-    if expr.kind == 'binary-expr':
-        lhs = eval_int_expr(scope, expr.lhs)
-        rhs = eval_int_expr(scope, expr.rhs)
-        if expr.op == '+':
-            return lhs + rhs
-        if expr.op == '-':
-            return lhs - rhs
-        if expr.op == '*':
-            return lhs * rhs
-        if expr.op == '/':
-            return lhs / rhs
-    if expr.kind == 'call-expr':
-        callee = eval_builtin_fn(scope, expr.fn)
-        args = [eval_int_expr(scope, arg) for arg in expr.args]
-        return callee(*args)
-    if expr.kind == 'ref':
-        target = scope.lookup(expr.name)
-        return eval_int_expr(getattr(target, 'scope', None), target)
-    raise RuntimeError('invalid int expr')
-
-def make_type_scope(decl, arg_scope, args):
-    res = Scope(parent=decl.scope)
-    if decl.kind != 'interface':
-        if args:
-            raise RuntimeError('argument cound mismatch')
-        return res
-
-    def assoc_arg(param, arg):
-        res.add(param, Node('num', value=eval_int_expr(arg_scope, arg)))
-
-    for i, arg in enumerate(args):
-        if arg.kw_name is None:
-            assoc_arg(decl.params[i][0], arg.value)
-        else:
-            assoc_arg(arg.kw_name, arg.value)
-    return res
-
-def expand_signal(scope, dir, name, type):
-    if type.kind == 'array-type':
-        suffix = []
-        for lb, rb in type.bounds:
-            lb = eval_int_expr(scope, lb)
-            rb = eval_int_expr(scope, rb)
-            suffix.append('[{}:{}]'.format(lb, rb))
-        suffix = ''.join(suffix)
-        sublist = expand_signal(scope, dir, name, type.subtype)
-        res = []
-        for pre, suf, name in sublist:
-            res.append((pre, suffix + suf, name))
-        return res
-    if type.kind == 'struct-type':
-        subtype = scope.lookup(type.name)
-        subtype_scope = make_type_scope(subtype, scope, type.args)
-        res = []
-        for member in subtype.decls:
-            if member.kind == 'use':
-                res.extend(expand_signal(subtype_scope, dir, name, member.type))
-            if member.kind == 'port':
-                new_dir = 'o' if member.dir == dir else 'i'
-                res.extend(expand_signal(subtype_scope, new_dir, '{}__{}'.format(name, member.name), member.type))
-        return res
     if type.kind == 'bit-type':
-        if dir is None:
-            out_dir = 'reg'
-        else:
-            out_dir = 'output reg' if dir == 'o' else 'input'
-        return [(out_dir, '', name)]
+        return [(dir == out_dir, name, bounds)]
+    elif type.kind == 'intf-inst-type':
+        r = []
+        for e_out, e_name, e_bounds in expand_ports(type.decl.ports, dir):
+            r.append((e_out, '{}__{}'.format(name, e_name), bounds + e_bounds))
+        return r
+    elif type.kind == 'enum-type':
+        return [(dir == out_dir, name, '[{}:0]'.format(int(math.ceil(math.log(len(type.decl.enumers), 2)))-1))]
+    elif type.kind == 'set-type':
+        return [(dir == out_dir, name, '[{}:0]'.format(len(type.decl.enumers)-1))]
+    else:
+        raise RuntimeError('unknown type')
 
-def format_expr(scope, expr):
-    if expr.kind == 'binary-expr':
-        lhs = format_expr(scope, expr.lhs)
-        rhs = format_expr(scope, expr.rhs)
-        return '({}) {} ({})'.format(lhs, expr.op, rhs)
-    if expr.kind == 'unary-expr':
-        e = format_expr(scope, expr.arg)
-        return '{}({})'.format(expr.op, e)
-    if expr.kind == 'member-expr':
-        e = format_expr(scope, expr.expr)
-        return '({}).{}'.format(e, expr.member)
-    if expr.kind == 'num':
-        return str(expr.value)
-    if expr.kind == 'sized-num':
-        return '{}\'b{}'.format(expr.size, expr.v)
+def expand_ports(ports, out_dir='o'):
+    # -> [(output: bool, name: str, bounds: str)]
+    r = []
+    for port in ports:
+        r.extend(expand_port(port.name, port.dir, port.type, out_dir))
+    return r
+
+def _resolve_expr(expr):
     if expr.kind == 'ref':
-        return expr.name
+        assert expr.decl.kind in ('port', 'signal', 'inst-inst')
+        return (expr.decl.name, '')
+    if expr.kind == 'slice-expr':
+        if expr.type.kind != 'resolved-array-type':
+            raise RuntimeError('slice operator requires an array')
+        name, suffix = _resolve_expr(expr.expr)
+        return (name, suffix + '[{}:{}]'.format(expr.lower_bound, expr.upper_bound))
+    if expr.kind == 'member-expr':
+        name, suffix = _resolve_expr(expr.expr)
+        return ('{}__{}'.format(name, expr.member), suffix)
+    if expr.kind == 'num':
+        return (str(expr.value), '')
+    if expr.kind == 'sized-num':
+        return ('{}\'b{}'.format(expr.size, expr.v), '')
+    if expr.kind == 'enum-expr':
+        return ('{}\'d{}'.format(int(math.ceil(math.log(len(expr.type.decl.enumers), 2))), expr.value_index), '')
+    if expr.kind == 'binary-expr':
+        return '{} {} {}'.format(resolve_expr(expr.lhs), expr.op, resolve_expr(expr.rhs)), ''
     raise RuntimeError('unknown expr')
 
-def format_stmt(scope, stmt, indent):
+def resolve_expr(expr):
+    name, suffix = _resolve_expr(expr)
+    return name + suffix
+
+def format_assign_stmt(lhs, rhs, fmt):
+    if rhs.type.kind == 'x-type':
+        assert rhs.kind == 'x-expr'
+        if lhs.type.kind == 'intf-inst-type':
+            lhs_name, lhs_suf = _resolve_expr(lhs)
+            r = []
+            for output, name, bounds in expand_ports(lhs.type.decl.ports):
+                r.append(fmt.format('{}__{}{}{}'.format(lhs_name, name, lhs_suf, bounds), '1\'sbx'))
+            return r
+        elif lhs.type.kind == 'resolved-array-type':
+            return [fmt.format(resolve_expr(lhs), '1\'sbx')]
+        else:
+            raise RuntimeError('invalid type')
+    else:
+        lhs = resolve_expr(lhs)
+        rhs = resolve_expr(rhs)
+        return [fmt.format(lhs, rhs)]
+
+def format_stmt(stmt, indent):
     if stmt.kind == 'assign-stmt':
-        lhs = format_expr(scope, stmt.lhs)
-        rhs = format_expr(scope, stmt.rhs)
-        op = '<=' if stmt.delayed else '='
-        return '{}{} {} {};\n'.format(indent, lhs, op, rhs)
+        return ''.join(format_assign_stmt(stmt.lhs, stmt.rhs, '{}{} {} {};\n'.format(indent, '{}', '<=' if stmt.delayed else '=', '{}')))
     if stmt.kind == 'if-stmt':
-        cond = format_expr(scope, stmt.cond)
-        true_body = format_stmts(scope, stmt.true_body, indent + '    ')
+        cond = resolve_expr(stmt.cond)
+        true_body = format_stmts(stmt.true_body, indent + '    ')
         if stmt.false_body is not None:
-            false_body = format_stmts(scope, stmt.false_body, indent + '    ')
+            false_body = format_stmts(stmt.false_body, indent + '    ')
             return '{ind}if ({cond}) begin\n{tr}{ind}end else begin\n{fal}{ind}end\n'.format(ind=indent, cond=cond, tr=true_body, fal=false_body)
         else:
             return '{ind}if ({cond}) begin\n{tr}{ind}end\n'.format(ind=indent, cond=cond, tr=true_body)
+    if stmt.kind == 'switch-stmt':
+        body = []
+        for case in stmt.cases:
+            case_value = resolve_expr(case.value)
+            stmts = format_stmts(case.body, indent + '        ')
+            body.append('{ind}{val}: begin\n{stmts}{ind}end\n'.format(ind=indent + '    ', val=case_value, stmts=stmts))
+        return '{ind}casez ({val})\n{body}{ind}endcase\n'.format(ind=indent, val=resolve_expr(stmt.value), body=''.join(body))
     raise RuntimeError('unknown stmt')
 
-def format_stmts(scope, stmts, indent):
-    return ''.join([format_stmt(scope, stmt, indent) for stmt in stmts])
+def format_stmts(stmts, indent):
+    return ''.join([format_stmt(stmt, indent) for stmt in stmts])
 
 def _gen_module(mod, fin):
     ports = []
-    for port in mod.ports:
-        new_ports = expand_signal(mod.scope, port.dir, port.name, port.type)
-        for pre, suf, name in new_ports:
-            ports.append('{}{} {}'.format(pre, suf, name))
+
+    for output, name, bounds in expand_ports(mod.ports):
+        ports.append('{}{} {}'.format('output reg' if output else 'input', bounds, name))
 
     decls = []
-    for def_ in mod.defs:
-        for decl in def_.decls:
-            if decl.kind == 'always':
-                decls.append('always @(*) begin\n{}end\n'.format(format_stmts(mod, decl.body, '    ')))
-            elif decl.kind == 'on':
-                specs = []
-                for spec in decl.specs:
-                    dir = 'posedge' if spec.rising else 'negedge'
-                    specs.append('{} {}'.format(dir, spec.name))
-                decls.append('always @({}) begin\n{}end\n'.format(' or '.join(specs), format_stmts(mod, decl.body, '    ')))
-            elif decl.kind == 'inst':
-                pms = []
-                for pm in decl.port_maps:
-                    pms.append('.{}({})'.format(pm.name, format_expr(mod.scope, pm.conn)))
-                decls.append('{} {}(\n    {}\n    );\n'.format(decl.module, decl.name, ',\n    '.join(pms)))
-            elif decl.kind == 'signal':
-                new_sigs = expand_signal(mod.scope, None, decl.name, decl.type)
-                for pre, suf, name in new_sigs:
-                    decls.append('{}{} {};\n'.format(pre, suf, name))
-            else:
-                raise RuntimeError('unknown decl')
+    for decl in mod.decls:
+        if decl.kind == 'always':
+            decls.append('always @(*) begin\n{}end\n'.format(format_stmts(decl.body, '    ')))
+        elif decl.kind == 'on':
+            specs = []
+            for spec in decl.specs:
+                dir = 'posedge' if spec.rising else 'negedge'
+                specs.append('{} {}'.format(dir, spec.name))
+            decls.append('always @({}) begin\n{}end\n'.format(' or '.join(specs), format_stmts(decl.body, '    ')))
+        elif decl.kind == 'inst-inst':
+            out = []
+            pms = []
+            for output, name, bounds in expand_ports(decl.module.ports):
+                if output:
+                    out.append('wire{} {}__{};\n'.format(bounds, decl.name, name))
+                    pms.append('.{}({}__{})'.format(name, decl.name, name))
+
+            for pm in decl.port_maps:
+                pms.append('.{}({})'.format(resolve_expr(pm.target), resolve_expr(pm.source)))
+            out.append('{} {}(\n    {}\n    );\n'.format(decl.module.specs[0].name, decl.name, ',\n    '.join(pms)))
+            decls.append(''.join(out))
+        elif decl.kind == 'signal':
+            for output, name, bounds in expand_port(decl.name, None, decl.type):
+                decls.append('reg{} {};\n'.format(bounds, name))
+        else:
+            raise RuntimeError('unknown decl')
     fin.write('''\
 module {name}(
     {ports}
@@ -163,8 +139,9 @@ module {name}(
 
 {decls}
 endmodule
-'''.format(name=mod.name, ports=',\n    '.join(ports), decls='\n'.join(decls)))
 
-def gen_verilog(mod, file):
-    _gen_module(mod, file)
+'''.format(name=mod.specs[0].name, ports=',\n    '.join(ports), decls='\n'.join(decls)))
 
+def gen_verilog(mods, file):
+    for mod in mods:
+        _gen_module(mod, file)

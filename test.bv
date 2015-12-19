@@ -82,16 +82,15 @@ def inst_decoder:
                 dec.rd = enc[2:0]
                 dec.rn = dec.rd
                 dec.rm = enc[5:3]
-                dec.alu_op = alu_op'adc
+                dec.alu_op = 'adc
                 dec.save_flags = { n, z, c, v }
                 dec.save_res = 1
 
-
-module arm_core:
+module arm_core(dw: int):
     i rst
     i clk
     m inst_bus: saxi_rd(aw=32, dw=16)
-    m data_bus: saxi(aw=32, dw=32)
+    m data_bus: saxi(aw=32, dw=dw)
 
 def arm_core:
     sig pc[31:0]

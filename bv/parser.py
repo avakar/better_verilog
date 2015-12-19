@@ -128,7 +128,10 @@ def slice_expr(p):
             upper_bound = p(expr)
             p(ws)
         p(r'\]')
-        return Node('slice-expr', expr=callee, lower_bound=lower_bound, upper_bound=upper_bound)
+        if upper_bound is not None:
+            return Node('slice-expr', expr=callee, lower_bound=lower_bound, upper_bound=upper_bound)
+        else:
+            return Node('subscript-expr', expr=callee, IndexError=lower_bound)
     return callee
 
 def member_expr(p):
@@ -206,17 +209,25 @@ def simple_type(p):
     name = p(ident)
     if len(name) == 1 and name[0] == 'bit':
         return Node('bit-type')
+    if name == 'set':
+        p(ws)
+        p(r'\(')
+        p(ws)
+        enum_type = p(ident)
+        p(ws)
+        p(r'\)')
+        return Node('set-type', enum=enum_type)
     gen_args = []
     with p:
         gen_args = p(generic_args)
     return Node('struct-type', name=name, args=gen_args)
 
 def signal_type(p):
-    subtype = p(simple_type)
+    r = p(simple_type)
     bounds = p(array_bounds)
-    if bounds:
-        return Node('array-type', subtype=subtype, bounds=bounds)
-    return subtype
+    for lb, rb in reversed(bounds):
+        r = Node('array-type', subtype=r, left_bound=lb, right_bound=rb)
+    return r
 
 def _member_decl(p):
     name = p(ident)
@@ -227,10 +238,10 @@ def _member_decl(p):
         type = p(signal_type)
         return name, type
     bounds = p(array_bounds)
-    simple_type = Node('bit-type')
-    if bounds:
-        return name, Node('array-type', subtype=simple_type, bounds=bounds)
-    return name, simple_type
+    r = Node('bit-type')
+    for lb, rb in reversed(bounds):
+        r = Node('array-type', subtype=r, left_bound=lb, right_bound=rb)
+    return name, r
 
 def port_decl(p):
     dir = p(ident)
@@ -300,10 +311,6 @@ def line_enumers(p):
         p(',')
     return r
 
-def struct_member(p):
-    name, type = p(_member_decl)
-    return Node('member', name=name, type=type)
-
 def assign_stmt(p):
     lhs = p(expr)
     p(ws)
@@ -349,12 +356,12 @@ def seq_stmt(p):
     return Node('if-stmt', cond=cond, true_body=true_body, false_body=false_body)
 
 def port_map(p):
-    name = p(ident)
+    target = p(expr)
     p(ws)
-    dir = p(r'(?:\<=|=\>)')
+    p(r'\<=')
     p(ws)
-    conn = p(expr)
-    return Node('port_map', name=name, into=dir == '<=', conn=conn)
+    source = p(expr)
+    return Node('port_map', target=target, source=source)
 
 def edge_spec(p):
     with p:
@@ -413,6 +420,10 @@ def intf_decl(p):
 
     return p(port_decl)
 
+def struct_member(p):
+    name, type = p(_member_decl)
+    return Node('port', dir='o', name=name, type=type)
+
 def top_decl(p):
     p(_indent)
 
@@ -427,6 +438,16 @@ def top_decl(p):
         return Node('interface', name=name, params=gen_args, decls=decls)
 
     with p:
+        p(kw, 'struct')
+        p(ws)
+        name = p(ident)
+        p(ws)
+        gen_args = p(generic_decl)
+        p(':')
+        members = p(_indented, struct_member)
+        return Node('interface', name=name, params=gen_args, decls=members)
+
+    with p:
         p(kw, 'enum')
         p(ws)
         name = p(ident)
@@ -438,20 +459,13 @@ def top_decl(p):
         return Node('enum', name=name, enumers=enumers)
 
     with p:
-        p(kw, 'struct')
-        p(ws)
-        name = p(ident)
-        p(':')
-        members = p(_indented, struct_member)
-        return Node('struct', name=name, members=members)
-
-    with p:
         p(kw, 'module')
         p(ws)
         name = p(ident)
+        gen_args = p(generic_decl)
         p(':')
         ports = p(_indented, port_decl)
-        return Node('module', name=name, ports=ports)
+        return Node('module', name=name, params=gen_args, ports=ports)
 
     p(kw, 'def')
     p(ws)
@@ -480,3 +494,6 @@ def parse(fin, name=None):
     r = speg.peg(fin.read().replace('\r', ''), unit)
     r.name = name
     return r
+
+def parse_type(s):
+    return speg.peg(s, simple_type)

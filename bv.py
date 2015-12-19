@@ -1,8 +1,8 @@
 ﻿import argparse, sys
-from bv.parser import parse as parse_bv
+from bv.parser import parse as parse_bv, parse_type
 from bv.ast import print_value
 from bv.gen_verilog import gen_verilog
-from bv.sema import sema
+from bv.sema import sema, Context
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
@@ -15,9 +15,10 @@ if __name__ == '__main__':
     if args.print_ast:
         print_value(units, file=sys.stdout)
 
-    ctx = sema(units)
+    root_scope = sema(units)
+    ctx = Context(units, root_scope)
+
     if args.module:
-        mod = ctx.lookup(args.module, 'module')
-        if mod is None:
-            raise RuntimeError('no module')
-        gen_verilog(mod, file=sys.stdout)
+        mod_inst_spec = parse_type(args.module)
+        ctx.instantiate_module(root_scope, mod_inst_spec.name, mod_inst_spec.args)
+        gen_verilog(ctx.all_modules(), file=sys.stdout)

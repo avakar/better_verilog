@@ -6,31 +6,36 @@ Here's the list of all AST nodes produced by the parser, along with their attrib
  * unit
     * decls: [unit_decls + def]
     * scope: scope (post-sema)
- * unit_decls = [interface + enum + struct + module]
+ * unit_decls = [interface + enum + module]
     * all unit decls have `name` and (after sema) `scope`.
  * interface
     * name: str
     * params: [(str, type)]
     * decls: [use + port]
     * scope: scope (post-sema)
+ * intf-inst
+    * ports: [port]
+    * specs
  * use
     * type: type
  * enum
     * name: str
     * enumers: [str]
     * scope: scope (post-sema)
- * struct
-    * name: str
-    * members: [member]
-    * scope: scope (post-sema)
  * member
     * name: str
     * type: type
  * module
     * name: str
+    * params: [(str, type)]
     * ports: [port]
     * scope: scope (post-sema)
     * defs: [def] (post-sema)
+ * module-inst (post-sema)
+    * ports: [port]
+    * decls: [signal + inst-inst + always + on]
+    * specs
+    * scope
  * def
     * name: str
     * decls: [signal + always + on + inst]
@@ -43,6 +48,7 @@ Here's the list of all AST nodes produced by the parser, along with their attrib
     * body: [stmt]
  * on
     * specs: [edgespec]
+    * body: [stmt]
  * edgespec
     * name: str # XXX
     * rising: bool
@@ -50,26 +56,36 @@ Here's the list of all AST nodes produced by the parser, along with their attrib
     * name: str
     * module: str
     * port_maps: [port_map]
- * port_map
+ * inst-inst (post-sema)
     * name: str
-    * into: bool
-    * conn: expr
+    * module: module-inst
+    * port-maps: [port-map]
+    * type: type
+    * specs
+ * port_map
+    * target: expr
+    * source: expr
  * port
     * dir: str
     * name: str
     * type: type
 
- * type = [bit-type + simple-type + array-type]
+ * type = [bit-type + struct-type + array-type + set-type]
  * bit-type
  * struct-type
     * name: str
     * args: [arg]
+    * decl: interface + enum (post-sema)
  * arg
     * kw_name: None + str
     * value: expr
  * array-type
     * subtype: type
-    * bounds: [(expr, expr)]
+    * left_bound: expr
+    * right_bound: expr
+ * set-type
+    * enum: str
+    * decl: enum (post-sema)
  
  * stmt = assign-stmt + switch-stmt + if-stmt
  * assign-stmt
@@ -87,7 +103,7 @@ Here's the list of all AST nodes produced by the parser, along with their attrib
     * true_body: [stmt]
     * false_body: None + [stmt]
 
- * expr = binary-expr + cast-expr + member-expr + slice-expr + call-expr + unary-expr + atom + num + sized-num + ref + set-expr
+ * expr = binary-expr + cast-expr + member-expr + slice-expr + subscript-expr + call-expr + unary-expr + atom + num + sized-num + ref + set-expr
  * binary-expr
     * lhs: expr
     * rhs: expr
@@ -101,10 +117,15 @@ Here's the list of all AST nodes produced by the parser, along with their attrib
  * member-expr
     * expr: expr
     * member: str
+    * decl (post-sema)
+    * type (post-sema)
  * slice-expr
     * expr: expr
     * lower_bound: expr
     * upper_bound: expr
+ * subscript-expr
+    * expr: expr
+    * index: expr
  * call-expr
     * fn: expr
     * args: [expr]
@@ -117,6 +138,9 @@ Here's the list of all AST nodes produced by the parser, along with their attrib
     * v: str
  * ref
     * name: str
+ * enum-expr
+    * value_index: int
+    * type: enum-type
  * set-expr
     * items: [str]
 
