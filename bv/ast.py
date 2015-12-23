@@ -4,9 +4,9 @@
 Here's the list of all AST nodes produced by the parser, along with their attributes.
 
  * unit
-    * decls: [unit_decls + def]
+    * decls: [unit_decl + def]
     * scope: scope (post-sema)
- * unit_decls = [interface + enum + module]
+ * unit_decl = interface + enum + module
     * all unit decls have `name` and (after sema) `scope`.
  * interface
     * name: str
@@ -38,7 +38,8 @@ Here's the list of all AST nodes produced by the parser, along with their attrib
     * scope
  * def
     * name: str
-    * decls: [signal + always + on + inst]
+    * declare: bool
+    * decls: [signal + always + on + inst + test]
     * scope: scope (post-sema)
     * mod: module (post-sema)
  * signal
@@ -48,6 +49,8 @@ Here's the list of all AST nodes produced by the parser, along with their attrib
     * body: [stmt]
  * on
     * specs: [edgespec]
+    * body: [stmt]
+ * test
     * body: [stmt]
  * edgespec
     * name: str # XXX
@@ -87,7 +90,7 @@ Here's the list of all AST nodes produced by the parser, along with their attrib
     * enum: str
     * decl: enum (post-sema)
  
- * stmt = assign-stmt + switch-stmt + if-stmt
+ * stmt = assign-stmt + switch-stmt + if-stmt + wait-stmt + assert-stmt
  * assign-stmt
     * lhs: expr
     * rhs: expr
@@ -102,6 +105,10 @@ Here's the list of all AST nodes produced by the parser, along with their attrib
     * cond: expr
     * true_body: [stmt]
     * false_body: None + [stmt]
+ * wait-stmt
+    * expr: expr
+ * assert-stmt
+    * expr: expr
 
  * expr = binary-expr + cast-expr + member-expr + slice-expr + subscript-expr + call-expr + unary-expr + atom + num + sized-num + ref + set-expr
  * binary-expr

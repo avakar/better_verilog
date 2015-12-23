@@ -39,9 +39,9 @@ _digits = {
     }
 
 def num_expr(p):
-    v = int(p(r'-?[0-9]+'), 10)
+    v = p(r'-?[0-9]+')
     with p:
-        size, v = v, p('\'(?:b[01xz\?_]+|o[0-7xz\?_]+|d[0-9_]+|h[0-9a-fxz\?_]+)')
+        size, v = int(v, 10), p('\'(?:b[01xz\?_]+|o[0-7xz\?_]+|d[0-9_]+|h[0-9a-fxz\?_]+)')
         base = v[1]
         v = v[2:].replace('_', '')
         if base == 'o':
@@ -51,7 +51,10 @@ def num_expr(p):
         elif base == 'd':
             v = bin(int(v, 10))
         return Node('sized-num', size=size, v=v)
-    return Node('num', value=v)
+    with p:
+        float_part = p(r'(?:\.[0-9]+(?:e[+-]?[0-9]+)?|(?:\.[0-9]+)?e[+-]?[0-9]+)')
+        return Node('num', value=float(v + float_part))
+    return Node('num', value=int(v, 10))
 
 def atom_expr(p):
     with p:
@@ -156,7 +159,7 @@ def expr(p):
     lhs = p(cast_expr)
     with p:
         p(ws)
-        op = p(r'[+\-*/]')
+        op = p(r'(?:==|[+\-*/])')
         p(ws)
         rhs = p(cast_expr)
         return Node('binary-expr', lhs=lhs, rhs=rhs, op=op)
@@ -328,7 +331,16 @@ def switch_case(p):
 
 def seq_stmt(p):
     with p:
-        return p(assign_stmt)
+        p(kw, 'wait')
+        p(ws)
+        e = p(expr)
+        return Node('wait-stmt', expr=e)
+
+    with p:
+        p(kw, 'assert')
+        p(ws)
+        e = p(expr)
+        return Node('assert-stmt', expr=e)
 
     with p:
         p(kw, 'switch')
@@ -339,21 +351,24 @@ def seq_stmt(p):
         cases = p(_indented, switch_case)
         return Node('switch-stmt', value=value, cases=cases)
 
-    p(kw, 'if')
-    p(ws)
-    cond = p(expr)
-    p(ws)
-    p(':')
-    true_body = p(_indented, seq_stmt)
-    false_body = None
     with p:
-        p(nl)
-        p(_indent)
-        p(kw, 'else')
+        p(kw, 'if')
+        p(ws)
+        cond = p(expr)
         p(ws)
         p(':')
-        false_body = p(_indented, seq_stmt)
-    return Node('if-stmt', cond=cond, true_body=true_body, false_body=false_body)
+        true_body = p(_indented, seq_stmt)
+        false_body = None
+        with p:
+            p(nl)
+            p(_indent)
+            p(kw, 'else')
+            p(ws)
+            p(':')
+            false_body = p(_indented, seq_stmt)
+        return Node('if-stmt', cond=cond, true_body=true_body, false_body=false_body)
+
+    return p(assign_stmt)
 
 def port_map(p):
     target = p(expr)
@@ -386,6 +401,12 @@ def def_decl(p):
         p(':')
         body = p(_indented, seq_stmt)
         return Node('always', body=body)
+    with p:
+        p(kw, 'test')
+        p(ws)
+        p(':')
+        body = p(_indented, seq_stmt)
+        return Node('test', body=body)
     with p:
         p(kw, 'on')
         p(ws)
@@ -469,10 +490,15 @@ def top_decl(p):
 
     p(kw, 'def')
     p(ws)
+    declare = False
+    with p:
+        p(kw, 'module')
+        p(ws)
+        declare = True
     name = p(ident)
     p(':')
     decls = p(_indented, def_decl)
-    return Node('def', name=name, decls=decls)
+    return Node('def', name=name, declare=declare, decls=decls)
 
 def unit(p):
     p.opt(nl)
