@@ -44,6 +44,12 @@ def _resolve_expr(expr):
     if expr.kind == 'member-expr':
         name, suffix = _resolve_expr(expr.expr)
         return ('{}__{}'.format(name, expr.member), suffix)
+    if expr.kind == 'unary-expr':
+        arg = resolve_expr(expr.arg)
+        if expr.op == 'not':
+            return '!{}'.format(arg), ''
+        else:
+            return '{}{}'.format(expr.op, arg), ''
     if expr.kind == 'num':
         return (str(expr.value), '')
     if expr.kind == 'sized-num':

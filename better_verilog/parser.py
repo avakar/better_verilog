@@ -59,8 +59,15 @@ def num_expr(p):
 def atom_expr(p):
     with p:
         op = p('-')
+        p(ws)
         arg = p(cast_expr)
         return Node('unary-expr', op=op, arg=arg)
+
+    with p:
+        p(kw, 'not')
+        p(ws)
+        arg = p(cast_expr)
+        return Node('unary-expr', op='not', arg=arg)
 
     with p:
         p('\'')
