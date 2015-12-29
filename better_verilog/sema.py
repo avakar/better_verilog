@@ -19,7 +19,7 @@ class Scope:
         return None
 
     def items(self):
-        return self.map.iteritems()
+        return self.map.items()
 
 def _resolve_type(scope, type):
     if type.kind == 'array-type':
