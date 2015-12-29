@@ -16,7 +16,7 @@ setup(
     packages=['better_verilog'],
     entry_points = {
         'console_scripts': [
-            'bv = better_verilog.main:main'
+            'bv = better_verilog.__main__:main'
         ],
     }
 )

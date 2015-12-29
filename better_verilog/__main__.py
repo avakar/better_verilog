@@ -31,3 +31,6 @@ def main():
         mod_inst_spec = parse_type(args.module)
         ctx.instantiate_module(root_scope, mod_inst_spec.name, mod_inst_spec.args)
         gen_verilog(ctx.all_modules(), file=sys.stdout)
+
+if __name__ == '__main__':
+    sys.exit(main())
