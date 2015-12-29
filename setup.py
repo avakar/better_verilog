@@ -14,6 +14,7 @@ setup(
     license='MIT',
 
     packages=['better_verilog'],
+    install_requires=['speg'],
     entry_points = {
         'console_scripts': [
             'bv = better_verilog.__main__:main'
