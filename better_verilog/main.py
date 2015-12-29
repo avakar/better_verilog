@@ -1,10 +1,10 @@
-﻿import argparse, sys, glob
-from bv.parser import parse as parse_bv, parse_type
-from bv.ast import print_value
-from bv.gen_verilog import gen_verilog
-from bv.sema import sema, Context
+import argparse, sys, glob
+from .parser import parse as parse_bv, parse_type
+from .ast import print_value
+from .gen_verilog import gen_verilog
+from .sema import sema, Context
 
-if __name__ == '__main__':
+def main():
     p = argparse.ArgumentParser()
     p.add_argument('-m', '--module')
     p.add_argument('--print-ast', action='store_true')
