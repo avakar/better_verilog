@@ -31,6 +31,11 @@ def main():
         mod_inst_spec = parse_type(args.module)
         ctx.instantiate_module(root_scope, mod_inst_spec.name, mod_inst_spec.args)
         gen_verilog(ctx.all_modules(), file=sys.stdout)
+    else:
+        for name, entity in root_scope.items():
+            if entity.kind == 'module' and not entity.params:
+                ctx.instantiate_module(root_scope, name, ())
+        gen_verilog(ctx.all_modules(), file=sys.stdout)
 
 if __name__ == '__main__':
     sys.exit(main())
