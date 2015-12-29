@@ -1,0 +1,7 @@
+module hello:
+    i clk
+    o led
+
+def hello:
+    on posedge clk:
+        led <= not led
