@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/avakar/better_verilog.svg?branch=master)](https://travis-ci.org/avakar/better_verilog)
+
 A succint, yet expressive HDL.
 
 Getting started
