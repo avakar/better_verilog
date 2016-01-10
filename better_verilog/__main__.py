@@ -30,12 +30,11 @@ def main(args=None, stdout=sys.stdout):
     if args.module:
         mod_inst_spec = parse_type(args.module)
         ctx.instantiate_module(root_scope, mod_inst_spec.name, mod_inst_spec.args)
-        gen_verilog(ctx.all_modules(), file=stdout)
     else:
         for name, entity in root_scope.items():
             if entity.kind == 'module' and not entity.params:
                 ctx.instantiate_module(root_scope, name, ())
-        gen_verilog(ctx.all_modules(), file=stdout)
+    gen_verilog(ctx.all_modules(), file=stdout)
 
 if __name__ == '__main__':
     sys.exit(main())
