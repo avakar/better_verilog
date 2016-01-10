@@ -32,6 +32,12 @@ def expand_ports(ports, out_dir='o'):
         r.extend(expand_port(port.name, port.dir, port.type, out_dir))
     return r
 
+_binary_ops = {
+    'and': '&',
+    'or': '|',
+    'xor': '^'
+    }
+
 def _resolve_expr(expr):
     if expr.kind == 'ref':
         assert expr.decl.kind in ('port', 'signal', 'inst-inst')
@@ -57,7 +63,7 @@ def _resolve_expr(expr):
     if expr.kind == 'enum-expr':
         return ('{}\'d{}'.format(int(math.ceil(math.log(len(expr.type.decl.enumers), 2))), expr.value_index), '')
     if expr.kind == 'binary-expr':
-        return '{} {} {}'.format(resolve_expr(expr.lhs), expr.op, resolve_expr(expr.rhs)), ''
+        return '{} {} {}'.format(resolve_expr(expr.lhs), _binary_ops.get(expr.op, expr.op), resolve_expr(expr.rhs)), ''
     raise RuntimeError('unknown expr')
 
 def resolve_expr(expr):

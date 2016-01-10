@@ -162,13 +162,20 @@ def cast_expr(p):
         return Node('cast-expr', type=type, expr=e)
     return p(member_expr)
 
+_binary_op = 'and', 'or', 'xor'
+
 def expr(p):
     lhs = p(cast_expr)
     with p:
         p(ws)
-        op = p(r'(?:==|[+\-*/])')
+        for bin_op in _binary_op:
+            with p:
+                op = p(kw, bin_op)
+                break
+        else:
+            op = p(r'(?:==|[+\-*/])')
         p(ws)
-        rhs = p(cast_expr)
+        rhs = p(expr)
         return Node('binary-expr', lhs=lhs, rhs=rhs, op=op)
     return lhs
 
